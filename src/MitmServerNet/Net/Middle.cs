@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
 using MitmServerNet.Config;
 using MitmServerNet.Helpers;
+using MitmServerNet.Net.Packets;
 
 namespace MitmServerNet.Net;
 
@@ -175,29 +176,53 @@ public class Middle
         return true;
     }
 
-    private async Task SwapAsync(MiddleSwap from, MiddleSwap to, CancellationToken cancellationToken)
+    private async Task SwapAsync<TFrom, TTo>(MiddleSwap<TFrom> from, MiddleSwap<TTo> to, CancellationToken cancellationToken) where TFrom : Enum where TTo : Enum
     {
         using var bufferOwner = MemoryPool<byte>.Shared.Rent(4096);
         
         var buffer = bufferOwner.Memory;
         
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var readBytes = await from.Stream.ReadAsync(buffer, cancellationToken);
-            if (readBytes == 0)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                break;
+                var readBytes = await from.Stream.ReadAsync(buffer, cancellationToken);
+                if (readBytes == 0)
+                {
+                    break;
+                }
+
+                // Parse the received bytes.
+                foreach (var frame in from.Parser.Parse(buffer.Slice(0, readBytes)))
+                {
+                    // Parse packet.
+                    var packet = new HabboPacket(frame);
+                    
+                    // Dump the received bytes.
+                    _logger.LogInformation("[{From} -> {To}] Received packet Id {Id}, length {Length}", from.Name, to.Name, packet.Id, packet.Length);
+
+                    Console.ForegroundColor = from.Color;
+                    Console.WriteLine(HexFormatting.Dump(frame.Data));
+                    Console.ResetColor();
+                    
+                    // Modify the packet.
+                    var modified = from.Modifier((TFrom) Enum.ToObject(typeof(TFrom), packet.Id), packet);
+                    
+                    // Write to the target stream.
+                    if (modified != null)
+                    {
+                        await to.Stream.WriteAsync(modified.Frame.Data, cancellationToken);
+                    }
+                    else
+                    {
+                        await to.Stream.WriteAsync(frame.Data, cancellationToken);
+                    }
+                }
             }
-            
-            // Dump the received bytes.
-            _logger.LogInformation("[{From} -> {To}] Received {Bytes} bytes", from.Name, to.Name, readBytes);
-            
-            Console.ForegroundColor = from.Color;
-            Console.WriteLine(HexFormatting.Dump(buffer.Slice(0, readBytes).Span));
-            Console.ResetColor();
-            
-            // Write to the target stream.
-            await to.Stream.WriteAsync(buffer.Slice(0, readBytes), cancellationToken);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to swap data");
         }
     }
     
@@ -214,13 +239,41 @@ public class Middle
         }
         
         // Create tasks for receiving from both streams.
-        var clientSwap = new MiddleSwap("Client", _serverStream, ConsoleColor.Cyan);
-        var targetSwap = new MiddleSwap("Target", _targetStream, ConsoleColor.Magenta);
+        var clientSwap = new MiddleSwap<C2S>("Client", _serverStream, InterceptC2S, ConsoleColor.Cyan);
+        var targetSwap = new MiddleSwap<S2C>("Target", _targetStream, InterceptS2C, ConsoleColor.Magenta);
         
         var clientTask = SwapAsync(clientSwap, targetSwap, cancellationToken);
         var targetTask = SwapAsync(targetSwap, clientSwap, cancellationToken);
 
         // Wait for any task to finish.
         await Task.WhenAny(clientTask, targetTask);
+    }
+    
+    private static HabboPacket? InterceptC2S(C2S header, HabboPacket packet)
+    {
+        switch (header)
+        {
+            case C2S.ClientHelloMessageComposer:
+                return null;
+            case C2S.InitDiffieHandshakeMessageComposer:
+                return null;
+            case C2S.CompleteDiffieHandshakeMessageComposer:
+                return null;
+        }
+        
+        return null;
+    }
+    
+    private static HabboPacket? InterceptS2C(S2C header, HabboPacket packet)
+    {
+        switch (header)
+        {
+            case S2C.InitDiffieHandshakeEvent:
+                return null;
+            case S2C.CompleteDiffieHandshakeEvent:
+                return null;
+        }
+        
+        return null;
     }
 }
