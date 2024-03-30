@@ -23,7 +23,7 @@ This project has certificate validation built in to prevent this mistake.
 
 ## Client Protocol
 
-This describes how the Habbo Unity client to the Habbo server.
+Describes how the Habbo Unity client connects to the Habbo server.
 
 ### 1. Connect with WebSocket
 
@@ -43,7 +43,7 @@ Sec-WebSocket-Version: 13
 ### 2. mTLS Handshake
 
 Client sends `StartTLS`, server replies with `OK`.  
-Afterwards it does the mTLS handshake using the BouncyCastyle [TlsClientProtocol.cs](https://github.com/bcgit/bc-csharp/blob/e1bbb04c4de1b249165f3f9c1a2a8aa896c8f10b/crypto/src/tls/TlsClientProtocol.cs#L331).
+Afterwards it does the mTLS handshake using the BouncyCastle [TlsClientProtocol.cs](https://github.com/bcgit/bc-csharp/blob/e1bbb04c4de1b249165f3f9c1a2a8aa896c8f10b/crypto/src/tls/TlsClientProtocol.cs#L331).
 
 Client receives handshake messages in this order.
 
@@ -100,7 +100,8 @@ Prompts the server to start with the handshake.
 
 #### Server - InitDiffieHandshakeEvent [278]
 
-Sends signed prime and generator, client decrypts with embedded RSA public key.
+Sends signed prime and generator, client decrypts with embedded RSA public key.  
+The embedded RSA public key is loaded using `BigInteger.Parse(string value, NumberStyles style)` as hex.
 
 #### Client - CompleteDiffieHandshakeMessageComposer [208]
 

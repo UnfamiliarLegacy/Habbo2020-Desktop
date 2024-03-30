@@ -35,7 +35,8 @@ public class HabboFrameParser
         while (bufferSpan.Length - bufferOffset >= 6)
         {
             var packetLength = BinaryPrimitives.ReadInt32BigEndian(bufferSpan.Slice(bufferOffset).Span);
-            if (packetLength > bufferSpan.Length)
+            
+            if (packetLength + 4 > bufferSpan.Length - bufferOffset)
             {
                 break;
             }
