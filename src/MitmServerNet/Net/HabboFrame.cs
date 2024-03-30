@@ -8,4 +8,5 @@ public class HabboFrame
     }
     
     public byte[] Data { get; }
+    public Span<byte> Header => Data.AsSpan(4, 2);
 }
